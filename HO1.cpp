@@ -1,5 +1,3 @@
-//Harmonic oscillator: pay atttention: you need to impose that the wavefunction 
-//goes to zero when x goes to +/- \infty. 
 
 #include <iostream>
 #include <iomanip>
@@ -89,4 +87,3 @@ void numR(float *x, float *y, float h, float E, int N){
 	file2.close();
 }
  
- // credo che per farmi restituire la derivata logaritmica devo per forza trasformare le due void in due float. 
