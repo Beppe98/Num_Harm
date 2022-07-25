@@ -18,23 +18,35 @@
 
 using namespace std;
 
+//PARAMETERS OF THE SIMULATION
 double rs = 3.93;
 int Ne = 40;
 double Rc = pow(Ne, 1./3.)*rs;
-double r_max=30;
-const int N = 8000;
-double h=r_max/N;
-const int M = 1500;
-const int N_iter = 100;
+double r_max = 30;
 double rhob = 3./(4.*M_PI*pow(rs, 3.));
+
+//NUMEROV MESH
+const int N = 6000; 
+double h=r_max/N;
+
+//POINTS IN THE NUMEROV ENERGY MESH
+const int M = 1500; 
+
+//NUMBER OF SELF-CONSISTENT ITERATIONS
+const int N_iter = 100;
+
+//MESH OF POINTS
 double r[N] = {};
-//eigenvalues and comparison
+
+//ARRAYS THAT STORE THE ENERGIES COMPUTED WITH THE TWO EQUIVALENT FORMULAS
 double eps[6]; 
 double E_kin[6]; 
-//Density
+
+//DENSITY ARRAYS
 double p[N] = {};
 double p_new[N] = {}; 
-//Potentials 
+
+//POTENTIAL ARRAYS
 double v_eff[N] = {};
 double v_H[N] = {};
 double v_x[N] = {};
@@ -42,38 +54,55 @@ double v_c[N] = {};
 double v_KS[N] = {};
 
 
+//INITIAL DENSITY GUESS
+void p_guess();
+
+//PRINCIPAL CYCLE WITH NUMEROV
+void start(double y[], int l);
 double numL(double *y, double E, int l, int *count);
 double numR(double *y, double E, int l, int *count);
-void start(double y[], int l);
 void print_Psi(double *y, int n, int l);
 double norm(double *y);
 void num_cycle(int n, int l);
-void update_p();
-void p_guess();
-void fill_v_Hxc();
 double k(int i, double E);
-void fill_v_eff(int l);
-double norm_p();
 double find_dE();
-double kin_energy(double y[], int l);	
+
+//FUNCTIONS FOR FILLING THE POTENTIAL ARRAYS
+void fill_v_Hxc();
+void fill_v_eff(int l);
+
+//DENSITY IS UPDATED ACCORDING TO THE SELF-CONSISTENT PROCEDURE
+double norm_p();
+void update_p();
 void self_con();
-double polarizability();
+
+//ENERGY CHECK
+double kin_energy(double y[], int l);	
 double energy_1(double sum_E_kin);
 double energy_2(double sum_eps);
+void print_energies();
+
+//POL. CALCULATION
+double polarizability();
 
 
+//******************** CORE OF THE ALGORITHM *****************************
 int main(){
    int i;
    double sum_eps=0., sum_E_kin=0., E1=0., E2=0.;
+   
+   //INITIALIZE THE MESH OF POINTS
 	r[0] = h/2;
 	for(i=0; i<N-1; i++){
 		r[i+1] = r[i] + h;
 	}
+   //STARTING ELECTRON DENSITY (FERMI DISTRIBUTION)
 	p_guess();
 	
-	//Self-consistent procedure
+   //SELF CONSISTENT STEP & EIGENFUNCTIONS PLOT
 	self_con();
-	//Plot of the density and sums 
+	
+   //DENSITY PLOT 
 	ofstream os;
     os.open("p.txt", ios :: out | ios :: trunc);
     os.precision(6);
@@ -81,19 +110,14 @@ int main(){
         os << r[j] << "       " << p[j] << endl; 
      }
     os.close();
-    for(i=0; i<6; i++){
-    	sum_eps += eps[i];
-        sum_E_kin += E_kin[i];
-    }
-    E1 = energy_1(sum_E_kin);
-    E2 = energy_2(sum_eps);
-    cout << "E1: " << E1 << "      " << "E2: " << E2 << endl;  
+    
+    //POLARIZABILITY CALCULATION  
     double pol=0.; 
     pol = polarizability();
     cout << "Polarizability" << "       " << pol << endl; 
 }
 
-
+//******************** PRINT THE EIGENVALUES AT EACH STEP *********************
 void self_con(){
 	int i;
 	ofstream myfile;
@@ -109,17 +133,20 @@ void self_con(){
 	   num_cycle(1, 0); //2s
 	   update_p();
 	   myfile << eps[0] << "     "<< eps[1]<< "       "<< eps[2] << "       " << eps[3] << "         " << eps[4]<< "       " << eps[5] << "         " <<  norm_p() << endl;	 
+	   print_energies();
 	}
 	myfile.close();
 }
 
 
+//******************** CYCLE ON THE ENERGY MESH *********************
+//******************** CALCULATION OF THE NEW DENSITY ***************
 void num_cycle(int n, int l){
    double dE=0., F=0., F_old=0.;	
 	fill_v_eff(l);
 	dE = find_dE();
 	int count = 0, tmp = 0;
-	// Numerov algorithm
+	//NUMEROV ALGORITHM
 	int i;
 	double y[N] = {};
 	for(i=M-1; i>=0; i--){
@@ -129,21 +156,38 @@ void num_cycle(int n, int l){
 	   F -= numR(y, i*dE, l, &count);
 		if(F*F_old < 0 && abs(F_old) < 0.2 && abs(F) < 0.2){
 		  print_Psi(y, n, l);
-		  eps[4*n + l] = 2.*(2.*l + 1)*i*dE;
+		 eps[4*n + l] = 2.*(2.*l + 1)*i*dE;
 		  if(tmp == n){
 			  break;	
 		   }
 		  tmp = tmp + 1;		   
 		}
 	} 
-	//Energies 
-	E_kin[2*n + l] = kin_energy(y, l);
+	//KINETIC ENERGIES 
+	E_kin[4*n + l] = kin_energy(y, l);
 	for(int k=0; k<N; k++){
 		p_new[k] += y[k]*y[k]*(2*l + 1)/(2.*M_PI);
    }
 }
 
 
+double k(int i, double E){
+	return 2.*(E - v_KS[i]);       
+}
+
+
+double find_dE(){
+	double E_min = 0.;
+	for(int i=0; i<N; i++){
+		if(v_KS[i] < E_min){
+			E_min = v_KS[i];
+		} 
+	}
+	return E_min/M;
+}
+
+
+//***************** COMPUTE AND PRINT THE POTENTIALS *********************
 void fill_v_eff(int l){
 	ofstream file;
 	file.open("v_Hxc.txt", ios :: out | ios :: trunc);
@@ -185,17 +229,6 @@ void fill_v_Hxc(){
 }
 
 
-double find_dE(){
-	double E_min = 0.;
-	for(int i=0; i<N; i++){
-		if(v_KS[i] < E_min){
-			E_min = v_KS[i];
-		} 
-	}
-	return E_min/M;
-}
-
-
 double polarizability(){
 	int i, R;
 	double dr = r_max/N, I=0., alpha=0.;
@@ -208,6 +241,7 @@ double polarizability(){
 }
 
 
+//**************** SECTION FOR THE TWO ENERGIES ***************
 double energy_1(double sum_E_kin){
 	int i;
 	double I=0.;
@@ -228,14 +262,25 @@ double energy_2(double sum_eps){
 	double dr = r_max/N;
 	for(i=0; i<N; i++){
 		I -= 2.*M_PI*p[i]*v_H[i]*r[i]*r[i]*dr;
-		I -= 4.*M_PI*p[i]*v_x[i]*r[i]*r[i]*dr;
-		I -= 4.*M_PI*p[i]*v_c[i]*r[i]*r[i]*dr;
+	   I -= 4.*M_PI*p[i]*(v_x[i] + v_c[i])*r[i]*r[i]*dr;
 		I -= 3.*M_PI*pow(3./M_PI, 1./3.)*pow(p[i], 4./3.)*r[i]*r[i]*dr;
 	}
 	I = I + sum_eps;
 	return I;
 }
 
+
+void print_energies(){
+	double sum_eps = 0.;
+    double sum_E_kin = 0.;
+    for(int i=0; i<6; i++){
+    	sum_eps += eps[i];
+       sum_E_kin += E_kin[i];
+    }
+    double E1 = energy_1(sum_E_kin);
+    double E2 = energy_2(sum_eps);
+    cout << "E1: " << E1 << "      " << "E2: " << E2 << endl;
+}
 
 
 double kin_energy(double y[], int l){
@@ -245,22 +290,13 @@ double kin_energy(double y[], int l){
 	double der2[N] = {};
 	double dr = r_max/N;
 	for(i=0; i<N-1; i++){
-		der[i] = r[i]*r[i]*(y[i+1] - y[i])/dr;
+		der[i] = (y[i+1] - y[i])/dr;
 	}
 	der[N-1] = der[N-2];
-	for(i=0; i<N-1; i++){
-		der2[i] = (der[i+1] - der[i])/dr;
-	}
-	der2[N-1] = der2[N-2];
 	for(i=0; i<N; i++){
-	   I -= y[i]*der2[i]*(2*l + 1)*dr;
+	   I += r[i]*r[i]*der[i]*der[i]*dr;
 	}
-	return I;
-}
-
-
-double k(int i, double E){
-	return 2.*(E - v_KS[i]);       
+	return I*2.*(2.*l + 1.);
 }
 
 
@@ -334,7 +370,7 @@ void print_Psi(double *y, int n, int l){
     	}
     }
     for(j=1; j<N; j++){
-    	 if(j != 0 && abs(y[j-1]/y[j])>50 && r[j]>node){
+    	 if(j != 0 && abs(y[j-1]/y[j])>1E3 && r[j]>node){
            k = j;
            break;
         }
@@ -373,3 +409,4 @@ double norm_p(){
 	}
 	return norm;
 }
+
